@@ -1,0 +1,73 @@
+pipeline {
+    agent any
+       
+	tools {
+	  maven 'maven3'
+    	}
+    stages {
+      stage('checkout') {
+            steps {
+                echo 'Cloning GIT HUB Repo '
+				git branch: 'main', url: 'https://github.com/barclays-project/rajesh_vinod_project.git'
+            }  
+        }	
+	  stage('sonar') {
+            steps {
+                echo 'scanning project'
+                sh 'ls -ltr'
+                
+                sh ''' mvn sonar:sonar \\
+                      -Dsonar.host.url=https://sonarcloud.io/ \\
+                      -Dsonar.login=53882981554911e6c25624e613e425efe302b5a1'''
+            }
+    	}	
+    stage('Build Artifact') {
+            steps {
+                echo 'Build Artifact'
+				sh 'mvn clean package'
+            }
+        }	
+    stage('Docker Image') {
+            steps {
+                echo 'Docker Image building'
+				sh 'docker build -t rkreddy94/vinuraj:${BUILD_NUMBER} .'
+            }
+        }
+    stage('Push to Dockerhub') {
+            steps {
+			 script {
+			withCredentials([string(credentialsId: 'dockerhubcred', variable: 'dockerhubcred')]) 
+			{
+            sh 'docker login -u rkreddy94 -p ${dockerhubcred}'
+			
+			 }
+			   sh 'docker push rkreddy94/vinuraj:${BUILD_NUMBER}'
+				}			
+            }
+        }	
+    stage('Update Deployment File') {
+		
+		 environment {
+            GIT_REPO_NAME = "rajesh_vinod_project"
+            GIT_USER_NAME = "barclays-project"
+        }	
+            steps {
+                echo 'Update Deployment File'
+				withCredentials([string(credentialsId: 'githubcred', variable: 'githubcred')]) 
+				{
+                  sh '''
+                    git config user.email "rajeshreddy.thallem94@gmail.com"
+                    git config user.name "Rajesh"
+                    BUILD_NUMBER=${BUILD_NUMBER}
+                    sed -i "s/vinuraj:.*/vinuraj:${BUILD_NUMBER}/g" deploymentfiles/deployment.yml
+                    git add .
+                    
+                    git commit -m "Update deployment image to version ${BUILD_NUMBER}"
+
+                    git push https://${githubcred}@github.com/${GIT_USER_NAME}/${GIT_REPO_NAME} HEAD:main
+                '''		  
+                 }			
+            }
+        }		
+    }
+}
